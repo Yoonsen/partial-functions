@@ -1,0 +1,15 @@
+[project]
+name = "partial-functions"
+version = "0.1.0"
+description = "Partial functions as vector spaces and distributions over Roaring Bitmaps and aligned value arrays"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+dependencies = [
+    "numba>=0.60",
+    "numpy>=2.0",
+    "pandas>=2.0",
+    "pyarrow>=15.0",
+    "pyroaring>=1.0",
+    "scipy>=1.13",
+]

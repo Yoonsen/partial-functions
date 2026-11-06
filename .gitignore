@@ -1,0 +1,27 @@
+# Python & Virtual environments
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+
+# Jupyter & IDE
+.ipynb_checkpoints/
+.vscode/
+.idea/
+.DS_Store
+
+# Local databases & large corpus files
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.db
+*.db-shm
+*.db-wal
+*.parquet
+*.tsv
