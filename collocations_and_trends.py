@@ -229,6 +229,55 @@ class RoaringCorpusIndex:
         pmi_pf = PartialFunc(ratio_pf.dom, np.log2(ratio_pf.val), validate=False)
         return tau_xy, pmi_pf
 
+    def sample_docs(
+        self,
+        n: int,
+        *,
+        corpus: Optional[BitMap] = None,
+        by: Optional[str] = None,
+        seed: int = 0,
+    ) -> BitMap:
+        """
+        Trekker et reproduserbart tilfeldig utvalg av bøker (doc_id) uten tilbakelegging.
+        Bøker, ikke chunks, er utvalgsenheten, slik at chunks fra samme bok holdes samlet.
+          - by=None      : n bøker fra hele korpuset
+          - by="year"    : inntil n bøker fra hvert år     (C & K_t for hver t)
+          - by="decade"  : inntil n bøker fra hvert tiår
+        Bruker rank/select i BitMap (corpus[i]), så korpuset materialiseres aldri.
+        Samme (corpus, n, by, seed) gir alltid samme utvalg.
+        """
+        C = corpus if corpus is not None else self.all_docs_bm
+        rng = np.random.default_rng(seed)
+
+        if by is None:
+            strata = [C]
+        elif by in ("year", "decade"):
+            buckets = self.year_doc_bm if by == "year" else self.decade_doc_bm
+            strata = [C & buckets[t] for t in sorted(buckets.keys())]
+        else:
+            raise ValueError(f"by må være None, 'year' eller 'decade', fikk {by!r}")
+
+        out = BitMap()
+        for S in strata:
+            m = len(S)
+            if m == 0:
+                continue
+            ranks = rng.choice(m, size=min(n, m), replace=False)
+            out.update(S[int(r)] for r in ranks)
+        return out
+
+    def docs_to_chunks(self, docs: BitMap) -> BitMap:
+        """
+        Løfter en dokument-bitmap til chunk-nivå:
+            {chunk_id : chunk_id >> K_SHIFT in docs} & all_chunks_bm
+        slik at et utvalg fra sample_docs kan brukes som corpus_mask/anker i
+        collocation_pmi og trendline.
+        """
+        span = BitMap()
+        for d in docs:
+            span.add_range(d << K_SHIFT, (d + 1) << K_SHIFT)
+        return span & self.all_chunks_bm
+
 
 # ---------------------------------------------------------------------------
 # Bygg RoaringCorpusIndex fra mat_bundle.json (med deterministiske chunks)

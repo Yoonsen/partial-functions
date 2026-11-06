@@ -107,7 +107,8 @@ CREATE TABLE word_unigrams (
 * [codec_and_traceability.py](codec_and_traceability.py) — `AlgebraCodec` med full pipeline fra inn-koding via funksjons-algebra til ettersporbar dekoding av topp-ord og konkordans-pekere.
 * [bsi_roaring.py](bsi_roaring.py) — Referanseimplementasjon og benchmark av Bit-Sliced Roaring (`BSIPartialFunc`).
 * [bench_rank_unigrams.py](bench_rank_unigrams.py) — Benchmark av klassisk `(book_id, cf_id)` B-tre mot Rank-indeksert `word_unigrams`.
-* [convert_shard_to_rank.py](convert_shard_to_rank.py) — 2-pass bøtte-konverterer som bygger `imag_roaring_rank_0.db` fra en eksisterende Roaring-shard på ~4,5 minutter.
+* [convert_shard_to_rank.py](convert_shard_to_rank.py) — 2-pass bøtte-konverterer som bygger `imag_roaring_rank_0.db` fra en eksisterende Roaring-shard på ~4,5 minutter. `offsets` er NULL når df == 1 (gjelder ~73 % av ordene i shard 0); les alltid via `arena_offsets()`.
+* [arena_near.py](arena_near.py) — Native `NEAR_k` over rank-arenaen i Numba: dekoder Roarings portable format direkte (array-, bitmap- og run-containere) og velger per bok mellom fletting av sorterte posisjoner (spredte ord) og bitsett med shift/POPCNT (tette ord som «.» og «,»). Ett kall for alle kandidatbøker.
 
 ---
 
@@ -121,11 +122,20 @@ CREATE TABLE word_unigrams (
 Avhengighetene står i `pyproject.toml` (numba, numpy, pandas, pyarrow, pyroaring, scipy, Python ≥ 3.11). Repoet har flat modulstruktur og ingen `[build-system]`, så installer avhengighetene direkte i et virtuelt miljø:
 ```bash
 python -m venv .venv && source .venv/bin/activate
-pip install "numba>=0.60" "numpy>=2.0" "pandas>=2.0" "pyarrow>=15.0" "pyroaring>=1.0" "scipy>=1.13"
+pip install "numba>=0.60" "numpy>=2.0" "pandas>=2.0" "pyarrow>=15.0" "pyroaring>=1.0" "scipy>=1.13" "pytest>=8"
 ```
 
-### Kjøring
-Det finnes ingen testrammeverk. Hver modul kjøres direkte og skriver ut verifikasjon og benchmark:
+### Tester (fasit for alle agenter)
+```bash
+python -m pytest -q
+```
+* Testene ligger i `tests/` og bruker bare syntetiske data, så de krever verken `doc-to-vec`, `metadata-roaring` eller shard-filer. De kjøres i GitHub Actions på hver push og PR (`.github/workflows/tests.yml`).
+* Alle algebraoperasjoner sammenlignes mot en dict-basert referanse, og distansene mot formlene over unionen. Endrer du algebraen, skal testene fortsatt passere. Legger du til en operasjon, skal den få en referansetest.
+* `xfail(strict=True)` markerer kjente feil. Når feilen rettes, feiler testen til markeringen fjernes.
+* `test_mat_and_totals.py` i rotmappen er et benchmarkskript mot ekte data, ikke en pytest-fil. pytest samler bare fra `tests/`.
+
+### Kjøring av skript
+Hver modul kan også kjøres direkte og skriver ut verifikasjon og benchmark mot ekte data:
 * `python test_mat_and_totals.py`: vektorromsaksiomer og snitt-metoder. Krever dataene fra `doc-to-vec`.
 * `python codec_and_traceability.py` og `python bsi_roaring.py`: demoer og benchmarks for de enkelte delene.
 * `python collocations_and_trends.py` og `python bench_rank_unigrams.py`: krever Shard 0 og metadata fra søsterrepoet `metadata-roaring` (`shards/imag_roaring_main_0.db`, `metadata_core_books.sqlite`). Stiene er hardkodet øverst i skriptene.

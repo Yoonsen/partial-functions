@@ -65,6 +65,16 @@ def simd_near_count(bm1: BitMap, bm2: BitMap, window: int = 5) -> int:
     return bm1.intersection_cardinality(neighborhood)
 
 
+def arena_offsets(offsets_blob: bytes | None, arena_len: int) -> np.ndarray:
+    """
+    Leser offsets for én word_unigrams-rad. convert_shard skriver NULL når df == 1,
+    og da er hele pos_arena den ene boka: offsets = [0, len(pos_arena)].
+    """
+    if offsets_blob is None:
+        return np.array([0, arena_len], dtype=np.uint32)
+    return np.frombuffer(offsets_blob, dtype=np.uint32)
+
+
 def build_test_databases(con_src: sqlite3.Connection) -> Tuple[Dict[str, dict], sqlite3.Connection]:
     """
     Henter de 9 testordene fra Shard 0, bygger chunk-bitmaps (L=1024, ovl=64),
@@ -242,11 +252,11 @@ def fetch_and_near_rank_blobopen(
 
     off1_blob = con_rank.execute("SELECT offsets FROM word_unigrams WHERE cf_id = ?", (cf1,)).fetchone()[0]
     off2_blob = con_rank.execute("SELECT offsets FROM word_unigrams WHERE cf_id = ?", (cf2,)).fetchone()[0]
-    off1 = np.frombuffer(off1_blob, dtype=np.uint32)
-    off2 = np.frombuffer(off2_blob, dtype=np.uint32)
 
     b1 = con_rank.blobopen("word_unigrams", "pos_arena", cf1, readonly=True)
     b2 = con_rank.blobopen("word_unigrams", "pos_arena", cf2, readonly=True)
+    off1 = arena_offsets(off1_blob, len(b1))
+    off2 = arena_offsets(off2_blob, len(b2))
 
     hits = 0
     try:
@@ -284,8 +294,8 @@ def fetch_and_near_rank_bulk(
         "SELECT offsets, pos_arena FROM word_unigrams WHERE cf_id = ?", (cf2,)
     ).fetchone()
 
-    off1 = np.frombuffer(off1_b, dtype=np.uint32)
-    off2 = np.frombuffer(off2_b, dtype=np.uint32)
+    off1 = arena_offsets(off1_b, len(arena1))
+    off2 = arena_offsets(off2_b, len(arena2))
     mv1 = memoryview(arena1)
     mv2 = memoryview(arena2)
 
