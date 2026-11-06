@@ -77,9 +77,23 @@ I en Roaring-korpusindeks der hvert ord $w$ har $C_w = \text{RM}(\text{chunk\_id
 * **Relativ trendlinje:** $\tau_{\text{rel}} = \tau_A / \tau_{\text{total}}$ (punktvis kvotient av `PartialFunc`).
 * **Diakron PMI-trendlinje:** $\log_2\!\big(\tau_{x \wedge y} / ((\tau_x * \tau_y) / \tau_{\text{total}})\big)$.
 
-### B. Filer i dette repoet
+### B. Rank-indeksert `word_unigrams` i SQLite ([convert_shard_to_rank.py](file:///Users/larsj/Github/partial-functions/convert_shard_to_rank.py))
+I stedet for å lagre `unigrams` som et 2D B-tre `PRIMARY KEY (book_id, cf_id) WITHOUT ROWID` (~77,3 millioner rader per shard), brukes «Fortran-modellen» også på posisjonsindeksen:
+```sql
+CREATE TABLE word_unigrams (
+    cf_id     INTEGER PRIMARY KEY,  -- Selve rowid i SQLite B-treet (kun 1 rad per cf_id!)
+    offsets   BLOB,                 -- NULL når df==1, ellers uint32[k + 1] byte-offsets
+    pos_arena BLOB NOT NULL         -- Alle k posisjons-bitmaps limt kant-i-kant i book_id-rekkefølge
+);
+```
+* **Oppslag for bok `b`:** Finn rangeringen $r = \texttt{docpost.rank(b) - 1}$ og klipp ut `pos_arena[offsets[r] : offsets[r + 1]]` (enten via én samlet `SELECT` eller selektivt med `con.blobopen("word_unigrams", "pos_arena", cf_id, readonly=True)`).
+* **Effekt på Shard 0 (8 906 bøker):** Kutter antall B-tre-rader med **84,7 %** (`77,3M` $\to$ `11,8M`), reduserer filstørrelsen fra **6,66 GB til 4,90 GB** (-26,4 %, og sparer i tillegg 1,90 GB chunk-sidecar), og gjør `NEAR_5` **8×–37× raskere** enn det gamle B-treet.
+
+### C. Filer i dette repoet
 * [partial_func.py](file:///Users/larsj/Github/partial-functions/partial_func.py) — Kjerneklassen `PartialFunc`, Numba-kjerner (`gallop`, `twopointer`, `bitblock_popcnt`), `SparseWorkspace`, PMI, JSD/TV/Hellinger og ettersporbar dekomponering.
 * [test_mat_and_totals.py](file:///Users/larsj/Github/partial-functions/test_mat_and_totals.py) — Innlasting av `totals_500k.parquet` og `mat_bundle.json`, verifikasjon av vektorromsaksiomer og benchmark av snitt-metodene.
 * [collocations_and_trends.py](file:///Users/larsj/Github/partial-functions/collocations_and_trends.py) — `RoaringCorpusIndex` for ren Roaring-aggregering av kollokasjoner, diakron drift og trendlinjer (testet på både DDK 641 og Shard 0 med 8 906 bøker).
 * [codec_and_traceability.py](file:///Users/larsj/Github/partial-functions/codec_and_traceability.py) — `AlgebraCodec` med full pipeline fra inn-koding via funksjons-algebra til ettersporbar dekoding av topp-ord og konkordans-pekere.
 * [bsi_roaring.py](file:///Users/larsj/Github/partial-functions/bsi_roaring.py) — Referanseimplementasjon og benchmark av Bit-Sliced Roaring (`BSIPartialFunc`).
+* [bench_rank_unigrams.py](file:///Users/larsj/Github/partial-functions/bench_rank_unigrams.py) — Benchmark av klassisk `(book_id, cf_id)` B-tre mot Rank-indeksert `word_unigrams`.
+* [convert_shard_to_rank.py](file:///Users/larsj/Github/partial-functions/convert_shard_to_rank.py) — 2-pass bøtte-konverterer som bygger `imag_roaring_rank_0.db` fra en eksisterende Roaring-shard på ~4,5 minutter.
